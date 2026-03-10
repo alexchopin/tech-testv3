@@ -26,7 +26,7 @@ x3dom.Viewarea.prototype.callEvtHandler = function (node, eventType, event) {
       });
     }
   } catch (e) {
-    x3dom.debug.logException(e);
+    console.error(e);
   }
 
   var jqEvent = jQuery.Event(eventType, event);

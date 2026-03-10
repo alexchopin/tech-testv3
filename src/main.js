@@ -21,7 +21,11 @@ if (Meteor.isClient) {
 
   Template.world.events({
     'mouseup #floor'(event) {
-      console.log('mouseup on floor', event);
+      try {
+        console.log('mouseup on floor', event);
+      } catch (e) {
+        console.error(e);
+      }
     }
 
   });
