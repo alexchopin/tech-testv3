@@ -17,13 +17,59 @@ Important notes
 
 if (Meteor.isClient) {
 
+  // Moves the camera while keeping the rotation/zoom the user did with the mouse.
+  // Setting the viewpoint's "position" attribute would make x3dom forget it
+  // (Viewpoint.resetView -> Viewarea.resetNavHelpers), so we update the
+  // viewpoint directly and re-center the user's rotation on the stack.
+  function moveCamera(camera, { y, z }) {
+    const viewpoint = camera._x3domNode;
+    const viewarea = viewpoint && viewpoint._nameSpace.doc._viewarea;
+    if (!viewarea) { // x3dom not started yet: it will read the attributes
+      camera.setAttribute('position', `0 ${y} ${z}`);
+      camera.setAttribute('centerOfRotation', `0 ${y} 0`);
+      return;
+    }
+
+    const { SFVec3f, SFMatrix4f } = x3dom.fields;
+    const center = new SFVec3f(0, y, 0);
+    viewpoint._vf.position = new SFVec3f(0, y, z);
+    viewpoint._vf.centerOfRotation = center; // the user now rotates around the stack
+    viewpoint._viewMatrix = SFMatrix4f.translation(viewpoint._vf.position)
+      .mult(viewpoint._vf.orientation.toMatrix())
+      .inverse();
+
+    // Same orientation as the user chose, but orbiting the new center.
+    const rotation = viewarea._rotMat.copy();
+    rotation.setTranslate(new SFVec3f(0, 0, 0));
+    viewarea._rotMat = SFMatrix4f.translation(center)
+      .mult(rotation)
+      .mult(SFMatrix4f.translation(center.negate()));
+
+    viewpoint._nameSpace.doc.needRender = true;
+  }
+
+  // Dragging rotates the view; a drag that ends over a cube must not count as a
+  // click on it. Pointer events fire before x3dom's mouse events, so this is
+  // up to date when the mouseup handlers below run.
+  const DRAG_THRESHOLD = 5; // px
+  let pointerDown = null;
+  let lastPointerWasDrag = false;
+  window.addEventListener('pointerdown', (e) => {
+    pointerDown = { x: e.clientX, y: e.clientY };
+  }, true);
+  window.addEventListener('pointerup', (e) => {
+    lastPointerWasDrag = !!pointerDown &&
+      Math.hypot(e.clientX - pointerDown.x, e.clientY - pointerDown.y) > DRAG_THRESHOLD;
+    pointerDown = null;
+  }, true);
+
   // Camera follows the height of the stack, with a short ease-out animation.
   Template.world.onRendered(function () {
     const camera = this.find('#camera');
     let current = null;
     this.cameraFrame = null;
 
-    const place = ({ y, z }) => camera.setAttribute('position', `0 ${y} ${z}`);
+    const place = (position) => moveCamera(camera, position);
 
     this.autorun(() => {
       const target = cameraFor(Cubes.find().count());
@@ -71,6 +117,7 @@ if (Meteor.isClient) {
     // Click on the top of the stack: add a random-colored cube on top.
     // Click on a lower cube: remove it (the cubes above fall down).
     async 'mouseup #red-cube'() {
+      if (lastPointerWasDrag) return;
       try {
         await handleCubeClick(RED_CUBE);
       } catch (e) {
@@ -79,6 +126,7 @@ if (Meteor.isClient) {
     },
 
     async 'mouseup .stack-cube'() {
+      if (lastPointerWasDrag) return;
       try {
         await handleCubeClick(this._id); // `this` is the cube rendered by {{#each}}
       } catch (e) {
