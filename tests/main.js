@@ -43,6 +43,21 @@ describe("cube stack", function () {
     });
   });
 
+  describe("cameraFor", function () {
+    it("keeps the default camera for a short stack", function () {
+      assert.deepStrictEqual(stack.cameraFor(0), { y: 0, z: 10 });
+    });
+    it("rises to the middle of the stack and backs up so all of it is in view", function () {
+      const size = 20;
+      const { y, z } = stack.cameraFor(size);
+      const top = size + 0.5;
+      const bottom = -0.5;
+      assert.strictEqual(y, (top + bottom) / 2);
+      const halfView = z * Math.tan(stack.CAMERA_FOV / 2);
+      assert.ok(y + halfView >= top && y - halfView <= bottom);
+    });
+  });
+
   describe("clickAction", function () {
     const cubes = [{ _id: "a" }, { _id: "b" }];
 

@@ -37,6 +37,20 @@ export function clickAction(stack, clickedId) {
   return 'remove';
 }
 
+// Camera that keeps the whole stack in view: it rises to the middle of the
+// stack and moves back when the stack gets taller than the view.
+export const CAMERA_FOV = 0.785398; // x3dom's default field of view (45°)
+const MIN_CAMERA_DISTANCE = 10; // x3dom's default camera distance
+const CAMERA_MARGIN = 1; // free space above and below the stack, in cubes
+
+export function cameraFor(stackSize) {
+  const height = stackSize + 1; // the stack plus the red cube
+  const bottom = -0.5; // the red cube is centered on the origin
+  const y = bottom + height / 2;
+  const z = Math.max(MIN_CAMERA_DISTANCE, (height / 2 + CAMERA_MARGIN) / Math.tan(CAMERA_FOV / 2));
+  return { y, z };
+}
+
 export async function getStack() {
   return Cubes.find({}, SORT).fetchAsync();
 }

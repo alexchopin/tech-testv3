@@ -1,6 +1,6 @@
 import { Meteor } from 'meteor/meteor';
 import { Template } from 'meteor/templating';
-import { Cubes, RED_CUBE, layoutStack, handleCubeClick } from './stack.js';
+import { Cubes, RED_CUBE, layoutStack, handleCubeClick, cameraFor } from './stack.js';
 
 /*
 Important notes
@@ -16,6 +16,42 @@ Important notes
 */
 
 if (Meteor.isClient) {
+
+  // Camera follows the height of the stack, with a short ease-out animation.
+  Template.world.onRendered(function () {
+    const camera = this.find('#camera');
+    let current = null;
+    this.cameraFrame = null;
+
+    const place = ({ y, z }) => camera.setAttribute('position', `0 ${y} ${z}`);
+
+    this.autorun(() => {
+      const target = cameraFor(Cubes.find().count());
+      cancelAnimationFrame(this.cameraFrame);
+
+      if (!current) { // first render: no animation
+        current = target;
+        place(current);
+        return;
+      }
+
+      const step = () => {
+        current = {
+          y: current.y + (target.y - current.y) * 0.15,
+          z: current.z + (target.z - current.z) * 0.15,
+        };
+        const done = Math.abs(target.y - current.y) < 0.01 && Math.abs(target.z - current.z) < 0.01;
+        if (done) current = target;
+        place(current);
+        if (!done) this.cameraFrame = requestAnimationFrame(step);
+      };
+      this.cameraFrame = requestAnimationFrame(step);
+    });
+  });
+
+  Template.world.onDestroyed(function () {
+    cancelAnimationFrame(this.cameraFrame); // the autorun itself is stopped by Blaze
+  });
 
   Template.world.helpers({
     cubes() {
