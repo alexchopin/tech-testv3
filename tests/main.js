@@ -19,12 +19,18 @@ describe("meteor-app", function () {
   }
 });
 
-describe("cube stack", function () {
+describe("cubes", function () {
   // Loaded lazily so the existing tests above don't depend on it.
   let stack;
   before(async function () {
     stack = await import("../src/stack.js");
   });
+
+  const UP = { x: 0, y: 0, z: 1 };
+  const DOWN = { x: 0, y: 0, z: -1 };
+  const EAST = { x: 1, y: 0, z: 0 };
+  const NORTH = { x: 0, y: 1, z: 0 };
+  const RED = { _id: null, x: 0, y: 0, z: 0 };
 
   describe("randomColor", function () {
     it("returns a #rrggbb color", function () {
@@ -34,80 +40,88 @@ describe("cube stack", function () {
     });
   });
 
-  describe("layoutStack", function () {
-    it("puts the n-th cube at height n, on top of the red cube", function () {
-      const layout = stack.layoutStack([{ _id: "a", color: "#123456" }, { _id: "b", color: "#abcdef" }]);
-      assert.deepStrictEqual(layout.map((c) => c.y), [1, 2]);
-      assert.deepStrictEqual(layout.map((c) => c.color), ["#123456", "#abcdef"]);
+  describe("layoutCubes", function () {
+    it("piles each column on the floor, in insertion order", function () {
+      const layout = stack.layoutCubes([
+        { _id: "a", x: 1, y: 0 },
+        { _id: "b", x: 2, y: 0 },
+        { _id: "c", x: 1, y: 0 },
+      ]);
+      assert.deepStrictEqual(layout.map((c) => [c._id, c.z]), [["a", 0], ["b", 0], ["c", 1]]);
+    });
+    it("piles the origin column on top of the red cube", function () {
+      const layout = stack.layoutCubes([{ _id: "a", x: 0, y: 0 }, { _id: "b", x: 0, y: 0 }]);
+      assert.deepStrictEqual(layout.map((c) => c.z), [1, 2]);
+    });
+  });
+
+  describe("faceDirection", function () {
+    it("snaps x3dom's slightly off-axis normals to the face's axis", function () {
+      assert.deepStrictEqual(stack.faceDirection({ x: 0.013, y: -0.002, z: 0.9999 }), UP);
+      assert.deepStrictEqual(stack.faceDirection({ x: 0.057, y: -0.998, z: 0.037 }), { x: 0, y: -1, z: 0 });
+    });
+  });
+
+  describe("targetColumn", function () {
+    it("adds on top of the same column for the top face", function () {
+      assert.deepStrictEqual(stack.targetColumn({ x: 2, y: 3 }, UP), { x: 2, y: 3 });
+    });
+    it("adds in the neighbouring column for a side face", function () {
+      assert.deepStrictEqual(stack.targetColumn({ x: 2, y: 3 }, EAST), { x: 3, y: 3 });
+      assert.deepStrictEqual(stack.targetColumn({ x: 2, y: 3 }, NORTH), { x: 2, y: 4 });
+    });
+    it("never adds under a cube, so never under the floor", function () {
+      assert.strictEqual(stack.targetColumn({ x: 0, y: 0 }, DOWN), null);
     });
   });
 
   describe("cameraFor", function () {
-    it("keeps the default camera for a short stack", function () {
-      assert.deepStrictEqual(stack.cameraFor(0), { y: 0, z: 10 });
+    it("keeps the default camera for the red cube alone", function () {
+      assert.deepStrictEqual(stack.cameraFor([]), { center: { x: 0, y: 0, z: 0 }, distance: 10 });
     });
-    it("rises to the middle of the stack and backs up so all of it is in view", function () {
-      const size = 20;
-      const { y, z } = stack.cameraFor(size);
-      const top = size + 0.5;
-      const bottom = -0.5;
-      assert.strictEqual(y, (top + bottom) / 2);
-      const halfView = z * Math.tan(stack.CAMERA_FOV / 2);
-      assert.ok(y + halfView >= top && y - halfView <= bottom);
-    });
-  });
-
-  describe("clickAction", function () {
-    const cubes = [{ _id: "a" }, { _id: "b" }];
-
-    it("pushes when the red cube is clicked on an empty stack", function () {
-      assert.strictEqual(stack.clickAction([], stack.RED_CUBE), "push");
-    });
-    it("pushes when the top cube is clicked", function () {
-      assert.strictEqual(stack.clickAction(cubes, "b"), "push");
-    });
-    it("removes a cube that is not the top", function () {
-      assert.strictEqual(stack.clickAction(cubes, "a"), "remove");
-    });
-    it("resets the stack when the red base is clicked under cubes", function () {
-      assert.strictEqual(stack.clickAction(cubes, stack.RED_CUBE), "reset");
+    it("centers on the cubes and backs up so all of them are in view", function () {
+      const tower = Array.from({ length: 20 }, (_, i) => ({ x: 0, y: 0, z: i + 1 }));
+      const { center, distance } = stack.cameraFor([...tower, { x: 3, y: 0, z: 0 }]);
+      assert.deepStrictEqual(center, { x: 1.5, y: 0, z: 10 });
+      const halfView = distance * Math.tan(stack.CAMERA_FOV / 2);
+      assert.ok(halfView >= Math.hypot(2, 10.5)); // farthest corner from the center
     });
   });
 
   if (Meteor.isServer) {
-    describe("handleCubeClick (against the test database)", function () {
+    describe("addCube, removeCube, resetCubes (against the test database)", function () {
+      const positions = async () =>
+        stack.layoutCubes(await stack.getStack()).map((c) => [c.x, c.y, c.z]);
+
       beforeEach(async function () {
         await stack.Cubes.removeAsync({});
       });
 
-      it("stacks on the top, removes lower cubes, and the rest falls down", async function () {
-        const ids = async () => (await stack.getStack()).map((c) => c._id);
-
-        assert.strictEqual(await stack.handleCubeClick(stack.RED_CUBE), "push");
-        const [first] = await ids();
-        assert.strictEqual(await stack.handleCubeClick(first), "push");
-        const [, second] = await ids();
-        assert.strictEqual(await stack.handleCubeClick(second), "push");
-        assert.strictEqual((await ids()).length, 3);
-
-        assert.strictEqual(await stack.handleCubeClick(first), "remove");
-
-        const remaining = await stack.getStack();
-        assert.deepStrictEqual(remaining.map((c) => c._id).slice(0, 1), [second]);
-        assert.deepStrictEqual(stack.layoutStack(remaining).map((c) => c.y), [1, 2]);
+      it("drops new cubes on the clicked side, onto the floor or the pile below", async function () {
+        await stack.addCube(RED, UP); // on the red cube
+        await stack.addCube({ x: 0, y: 0, z: 1 }, EAST); // side of a cube in the air: falls
+        await stack.addCube({ x: 1, y: 0, z: 0 }, UP);
+        assert.deepStrictEqual(await positions(), [[0, 0, 1], [1, 0, 0], [1, 0, 1]]);
       });
 
-      it("clicking the red cube clears the stack, then a new one can start", async function () {
-        await stack.handleCubeClick(stack.RED_CUBE);
-        const [first] = (await stack.getStack()).map((c) => c._id);
-        await stack.handleCubeClick(first);
-        assert.strictEqual((await stack.getStack()).length, 2);
+      it("never adds under the floor", async function () {
+        assert.strictEqual(await stack.addCube(RED, DOWN), null);
+        assert.deepStrictEqual(await positions(), []);
+      });
 
-        assert.strictEqual(await stack.handleCubeClick(stack.RED_CUBE), "reset");
-        assert.strictEqual((await stack.getStack()).length, 0);
+      it("removes a cube and the ones above it fall, but keeps the red cube", async function () {
+        const a = await stack.addCube({ x: 1, y: 0 }, UP);
+        await stack.addCube({ x: 1, y: 0 }, UP);
+        assert.strictEqual(await stack.removeCube(stack.RED_CUBE), false);
+        assert.strictEqual(await stack.removeCube(a), true);
+        assert.deepStrictEqual(await positions(), [[1, 0, 0]]);
+      });
 
-        assert.strictEqual(await stack.handleCubeClick(stack.RED_CUBE), "push");
-        assert.strictEqual((await stack.getStack()).length, 1);
+      it("resets to the red cube alone", async function () {
+        await stack.addCube(RED, UP);
+        await stack.addCube(RED, EAST);
+        await stack.resetCubes();
+        assert.deepStrictEqual(await positions(), []);
       });
     });
   }

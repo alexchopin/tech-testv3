@@ -1,6 +1,8 @@
 import { Meteor } from 'meteor/meteor';
 import { Template } from 'meteor/templating';
-import { Cubes, RED_CUBE, stackCursor, layoutStack, handleCubeClick, cameraFor } from './stack.js';
+import {
+  RED_CUBE, stackCursor, layoutCubes, cameraFor, addCube, removeCube, resetCubes,
+} from './stack.js';
 
 /*
 Important notes
@@ -20,20 +22,20 @@ if (Meteor.isClient) {
   // Moves the camera while keeping the rotation/zoom the user did with the mouse.
   // Setting the viewpoint's "position" attribute would make x3dom forget it
   // (Viewpoint.resetView -> Viewarea.resetNavHelpers), so we update the
-  // viewpoint directly and re-center the user's rotation on the stack.
-  function moveCamera(camera, { y, z }) {
+  // viewpoint directly and re-center the user's rotation on the cubes.
+  function moveCamera(camera, { center: c, distance }) {
     const viewpoint = camera._x3domNode;
     const viewarea = viewpoint && viewpoint._nameSpace.doc._viewarea;
     if (!viewarea) { // x3dom not started yet: it will read the attributes
-      camera.setAttribute('position', `0 ${y} ${z}`);
-      camera.setAttribute('centerOfRotation', `0 ${y} 0`);
+      camera.setAttribute('position', `${c.x} ${c.y} ${c.z + distance}`);
+      camera.setAttribute('centerOfRotation', `${c.x} ${c.y} ${c.z}`);
       return;
     }
 
     const { SFVec3f, SFMatrix4f } = x3dom.fields;
-    const center = new SFVec3f(0, y, 0);
-    viewpoint._vf.position = new SFVec3f(0, y, z);
-    viewpoint._vf.centerOfRotation = center; // the user now rotates around the stack
+    const center = new SFVec3f(c.x, c.y, c.z);
+    viewpoint._vf.position = new SFVec3f(c.x, c.y, c.z + distance);
+    viewpoint._vf.centerOfRotation = center; // the user now rotates around the cubes
     viewpoint._viewMatrix = SFMatrix4f.translation(viewpoint._vf.position)
       .mult(viewpoint._vf.orientation.toMatrix())
       .inverse();
@@ -48,31 +50,61 @@ if (Meteor.isClient) {
     viewpoint._nameSpace.doc.needRender = true;
   }
 
-  // Dragging rotates the view; a drag that ends over a cube must not count as a
-  // click on it. Pointer events fire before x3dom's mouse events, so this is
-  // up to date when the mouseup handlers below run.
+  // Dragging rotates (left) or zooms (right) the view; a drag that ends over a
+  // cube must not count as a click on it. Pointer events fire before x3dom's
+  // mouse events, so this is up to date when the mouseup handlers below run.
   const DRAG_THRESHOLD = 5; // px
   let pointerDown = null;
-  let lastPointerWasDrag = false;
+  let lastPointer = { wasDrag: false, button: 0 };
   window.addEventListener('pointerdown', (e) => {
     pointerDown = { x: e.clientX, y: e.clientY };
   }, true);
   window.addEventListener('pointerup', (e) => {
-    lastPointerWasDrag = !!pointerDown &&
-      Math.hypot(e.clientX - pointerDown.x, e.clientY - pointerDown.y) > DRAG_THRESHOLD;
+    lastPointer = {
+      wasDrag: !!pointerDown &&
+        Math.hypot(e.clientX - pointerDown.x, e.clientY - pointerDown.y) > DRAG_THRESHOLD,
+      button: e.button, // 0: left, 2: right
+    };
     pointerDown = null;
   }, true);
 
-  // Camera follows the height of the stack, with a short ease-out animation.
+  // Left click on a face: add a cube on that side. Right click: remove it.
+  async function onCubeClick(event, cube) {
+    if (lastPointer.wasDrag) return;
+    try {
+      if (lastPointer.button === 2) {
+        await removeCube(cube._id);
+      } else if (lastPointer.button === 0) {
+        await addCube(cube, { x: event.normalX, y: event.normalY, z: event.normalZ });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // Escape: back to the red cube alone.
+  async function onKeyDown(event) {
+    if (event.key !== 'Escape') return;
+    try {
+      await resetCubes();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // Camera follows the cubes, with a short ease-out animation.
   Template.world.onRendered(function () {
     const camera = this.find('#camera');
     let current = null;
     this.cameraFrame = null;
+    window.addEventListener('keydown', onKeyDown);
 
-    const place = (position) => moveCamera(camera, position);
+    const place = ({ x, y, z, distance }) => moveCamera(camera, { center: { x, y, z }, distance });
+    const flat = ({ center, distance }) => ({ ...center, distance });
+    const KEYS = ['x', 'y', 'z', 'distance'];
 
     this.autorun(() => {
-      const target = cameraFor(Cubes.find().count());
+      const target = flat(cameraFor(layoutCubes(stackCursor().fetch())));
       cancelAnimationFrame(this.cameraFrame);
 
       if (!current) { // first render: no animation
@@ -82,11 +114,8 @@ if (Meteor.isClient) {
       }
 
       const step = () => {
-        current = {
-          y: current.y + (target.y - current.y) * 0.15,
-          z: current.z + (target.z - current.z) * 0.15,
-        };
-        const done = Math.abs(target.y - current.y) < 0.01 && Math.abs(target.z - current.z) < 0.01;
+        current = Object.fromEntries(KEYS.map((k) => [k, current[k] + (target[k] - current[k]) * 0.15]));
+        const done = KEYS.every((k) => Math.abs(target[k] - current[k]) < 0.01);
         if (done) current = target;
         place(current);
         if (!done) this.cameraFrame = requestAnimationFrame(step);
@@ -97,11 +126,12 @@ if (Meteor.isClient) {
 
   Template.world.onDestroyed(function () {
     cancelAnimationFrame(this.cameraFrame); // the autorun itself is stopped by Blaze
+    window.removeEventListener('keydown', onKeyDown);
   });
 
   Template.world.helpers({
     cubes() {
-      return layoutStack(stackCursor().fetch());
+      return layoutCubes(stackCursor().fetch());
     },
   });
 
@@ -114,25 +144,12 @@ if (Meteor.isClient) {
       }
     },
 
-    // Click on the top of the stack: add a random-colored cube on top.
-    // Click on a lower cube: remove it (the cubes above fall down).
-    // Click on the red cube under a stack: reset to the red cube alone.
-    async 'mouseup #red-cube'() {
-      if (lastPointerWasDrag) return;
-      try {
-        await handleCubeClick(RED_CUBE);
-      } catch (e) {
-        console.error(e);
-      }
+    'mouseup #red-cube'(event) {
+      onCubeClick(event, { _id: RED_CUBE, x: 0, y: 0, z: 0 });
     },
 
-    async 'mouseup .stack-cube'() {
-      if (lastPointerWasDrag) return;
-      try {
-        await handleCubeClick(this._id); // `this` is the cube rendered by {{#each}}
-      } catch (e) {
-        console.error(e);
-      }
+    'mouseup .stack-cube'(event) {
+      onCubeClick(event, this); // `this` is the cube rendered by {{#each}}
     },
 
   });
