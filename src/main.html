@@ -3,6 +3,16 @@
   <link rel="stylesheet" type="text/css" href="https://www.x3dom.org/download/1.8.3/x3dom.css">
   <script type="text/javascript" src="https://www.x3dom.org/download/1.8.3/x3dom.js"></script>
   <script type="text/javascript" src="/x3dom-patch.js"></script>
+  <style>
+    .banner {
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
+      padding: 10px 18px; border-radius: 12px; text-align: center;
+      font: 600 18px/1.3 system-ui, sans-serif; color: #fff;
+      background: rgba(20, 20, 20, 0.75); pointer-events: none;
+    }
+    .banner .hint { font-weight: 400; font-size: 13px; opacity: 0.8; }
+    .banner .dot { display: inline-block; width: 0.8em; height: 0.8em; border-radius: 50%; vertical-align: -0.05em; }
+  </style>
 </head>
 
 <body>
@@ -10,10 +20,22 @@
 </body>
 
 <template name="world">
+  <div class="banner">
+    <div>
+      {{#if status.color}}<span class="dot" style="background: {{status.color}}"></span>{{/if}}
+      {{status.text}}
+    </div>
+    <div class="hint">{{status.hint}}</div>
+  </div>
+
   <x3d>
     <scene>
-      <!-- Camera: moved by main.js so every cube stays in view -->
-      <viewpoint id="camera" position="0 0 10" centerOfRotation="0 0 0" fieldOfView="0.785398"></viewpoint>
+      <!-- Camera: looks at the whole 7x7x7 grid from the front, above the floor -->
+      <viewpoint id="camera" position="0 -16.4 14.5" orientation="1 0 0 0.96"
+                 centerOfRotation="0 0 3" fieldOfView="0.785398"></viewpoint>
+
+      <!-- Sky, instead of the black beyond the floor when the view is tilted -->
+      <background skyColor="0.82 0.88 0.88"></background>
 
       <!-- Floor -->
       <transform id="floor">
@@ -21,26 +43,26 @@
           <appearance>
             <material diffuseColor="#4A9"></material>
           </appearance>
-          <plane center='0,0,-0.5' size="50 50"></plane>
+          <plane center='0,0,-0.5' size="400 400"></plane>
         </shape>
       </transform>
 
-      <!-- Red cube: fixed, on the floor at the origin -->
-      <transform id="red-cube" translation="0 0 0">
-        <shape>
-          <appearance>
-            <material diffuseColor="1 0 0"></material>
-          </appearance>
-          <box size="1 1 1"></box>
-        </shape>
-      </transform>
+      <!-- Grid: 7x7 cells on the floor and the edges of the 7x7x7 volume -->
+      <shape isPickable="false">
+        <appearance>
+          <material emissiveColor="1 1 1"></material>
+        </appearance>
+        <indexedLineSet coordIndex="{{grid.coordIndex}}">
+          <coordinate point="{{grid.point}}"></coordinate>
+        </indexedLineSet>
+      </shape>
 
-      <!-- Cubes added by the player, stored in the "cubes" collection -->
-      {{#each cubes}}
-        <transform class="stack-cube" translation="{{x}} {{y}} {{z}}">
+      <!-- Cubes: the red starting cube, then the moves stored in "cubes" -->
+      {{#each state.cubes}}
+        <transform class="cube" translation="{{x}} {{y}} {{z}}">
           <shape>
             <appearance>
-              <material diffuseColor="{{color}}"></material>
+              <material diffuseColor="{{color}}" transparency="{{fade}}"></material>
             </appearance>
             <box size="1 1 1"></box>
           </shape>

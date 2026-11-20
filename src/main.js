@@ -1,8 +1,8 @@
 import { Meteor } from 'meteor/meteor';
 import { Template } from 'meteor/templating';
 import {
-  RED_CUBE, stackCursor, layoutCubes, cameraFor, addCube, removeCube, resetCubes,
-} from './stack.js';
+  PLAYERS, movesCursor, gameState, gridLines, playMove, undoMove, resetGame,
+} from './game.js';
 
 /*
 Important notes
@@ -18,37 +18,6 @@ Important notes
 */
 
 if (Meteor.isClient) {
-
-  // Moves the camera while keeping the rotation/zoom the user did with the mouse.
-  // Setting the viewpoint's "position" attribute would make x3dom forget it
-  // (Viewpoint.resetView -> Viewarea.resetNavHelpers), so we update the
-  // viewpoint directly and re-center the user's rotation on the cubes.
-  function moveCamera(camera, { center: c, distance }) {
-    const viewpoint = camera._x3domNode;
-    const viewarea = viewpoint && viewpoint._nameSpace.doc._viewarea;
-    if (!viewarea) { // x3dom not started yet: it will read the attributes
-      camera.setAttribute('position', `${c.x} ${c.y} ${c.z + distance}`);
-      camera.setAttribute('centerOfRotation', `${c.x} ${c.y} ${c.z}`);
-      return;
-    }
-
-    const { SFVec3f, SFMatrix4f } = x3dom.fields;
-    const center = new SFVec3f(c.x, c.y, c.z);
-    viewpoint._vf.position = new SFVec3f(c.x, c.y, c.z + distance);
-    viewpoint._vf.centerOfRotation = center; // the user now rotates around the cubes
-    viewpoint._viewMatrix = SFMatrix4f.translation(viewpoint._vf.position)
-      .mult(viewpoint._vf.orientation.toMatrix())
-      .inverse();
-
-    // Same orientation as the user chose, but orbiting the new center.
-    const rotation = viewarea._rotMat.copy();
-    rotation.setTranslate(new SFVec3f(0, 0, 0));
-    viewarea._rotMat = SFMatrix4f.translation(center)
-      .mult(rotation)
-      .mult(SFMatrix4f.translation(center.negate()));
-
-    viewpoint._nameSpace.doc.needRender = true;
-  }
 
   // Dragging rotates (left) or zooms (right) the view; a drag that ends over a
   // cube must not count as a click on it. Pointer events fire before x3dom's
@@ -68,90 +37,70 @@ if (Meteor.isClient) {
     pointerDown = null;
   }, true);
 
-  // Left click on a face: add a cube on that side. Right click: remove it.
-  async function onCubeClick(event, cube) {
+  const run = (action) => action().catch((e) => console.error(e));
+
+  // Left click on a face: play a cube on that side. Right click: undo.
+  function onClick(event, cube) {
     if (lastPointer.wasDrag) return;
-    try {
-      if (lastPointer.button === 2) {
-        await removeCube(cube._id);
-      } else if (lastPointer.button === 0) {
-        await addCube(cube, { x: event.normalX, y: event.normalY, z: event.normalZ });
-      }
-    } catch (e) {
-      console.error(e);
+    if (lastPointer.button === 2) {
+      run(undoMove);
+    } else if (lastPointer.button === 0 && cube) {
+      run(() => playMove(cube, { x: event.normalX, y: event.normalY, z: event.normalZ }));
     }
   }
 
-  // Escape: back to the red cube alone.
-  async function onKeyDown(event) {
-    if (event.key !== 'Escape') return;
-    try {
-      await resetCubes();
-    } catch (e) {
-      console.error(e);
-    }
+  // Escape: new game.
+  function onKeyDown(event) {
+    if (event.key === 'Escape') run(resetGame);
   }
 
-  // Camera follows the cubes, with a short ease-out animation.
   Template.world.onRendered(function () {
-    const camera = this.find('#camera');
-    let current = null;
-    this.cameraFrame = null;
     window.addEventListener('keydown', onKeyDown);
-
-    const place = ({ x, y, z, distance }) => moveCamera(camera, { center: { x, y, z }, distance });
-    const flat = ({ center, distance }) => ({ ...center, distance });
-    const KEYS = ['x', 'y', 'z', 'distance'];
-
-    this.autorun(() => {
-      const target = flat(cameraFor(layoutCubes(stackCursor().fetch())));
-      cancelAnimationFrame(this.cameraFrame);
-
-      if (!current) { // first render: no animation
-        current = target;
-        place(current);
-        return;
-      }
-
-      const step = () => {
-        current = Object.fromEntries(KEYS.map((k) => [k, current[k] + (target[k] - current[k]) * 0.15]));
-        const done = KEYS.every((k) => Math.abs(target[k] - current[k]) < 0.01);
-        if (done) current = target;
-        place(current);
-        if (!done) this.cameraFrame = requestAnimationFrame(step);
-      };
-      this.cameraFrame = requestAnimationFrame(step);
-    });
   });
 
   Template.world.onDestroyed(function () {
-    cancelAnimationFrame(this.cameraFrame); // the autorun itself is stopped by Blaze
     window.removeEventListener('keydown', onKeyDown);
   });
 
+  const NAMES = { red: 'Rouge', yellow: 'Jaune' };
+  const HINT = 'Clic : jouer · Clic droit : annuler (1 fois par tour) · Échap : nouvelle partie';
+
   Template.world.helpers({
-    cubes() {
-      return layoutCubes(stackCursor().fetch());
+    state() {
+      const state = gameState(movesCursor().fetch());
+      const over = !state.turn;
+      return {
+        ...state,
+        cubes: state.cubes.map((cube) => ({
+          ...cube,
+          color: PLAYERS[cube.player],
+          fade: over && state.winner && !cube.winning ? 0.75 : 0, // the winning line stands out
+        })),
+      };
+    },
+
+    status() {
+      const state = gameState(movesCursor().fetch());
+      if (state.winner) {
+        return { text: `${NAMES[state.winner]} gagne !`, color: PLAYERS[state.winner], hint: 'Échap : nouvelle partie' };
+      }
+      if (state.draw) return { text: 'Match nul', hint: 'Échap : nouvelle partie' };
+      return { text: `Tour : ${NAMES[state.turn]}`, color: PLAYERS[state.turn], hint: HINT };
+    },
+
+    grid() {
+      return gridLines();
     },
   });
 
   Template.world.events({
     'mouseup #floor'(event) {
-      try {
-        console.log('mouseup on floor', event);
-      } catch (e) {
-        console.error(e);
-      }
+      onClick(event, null); // only a right click (undo) does something here
     },
 
-    'mouseup #red-cube'(event) {
-      onCubeClick(event, { _id: RED_CUBE, x: 0, y: 0, z: 0 });
+    'mouseup .cube'(event) {
+      onClick(event, this); // `this` is the cube rendered by {{#each}}
     },
-
-    'mouseup .stack-cube'(event) {
-      onCubeClick(event, this); // `this` is the cube rendered by {{#each}}
-    },
-
   });
 
 }
