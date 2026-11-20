@@ -22,7 +22,7 @@
         </shape>
       </transform>
 
-      <!-- Red cube (click it to put a yellow cube on top) -->
+      <!-- Red cube: base of the stack -->
       <transform id="red-cube" translation="0 0 0">
         <shape>
           <appearance>
@@ -32,12 +32,12 @@
         </shape>
       </transform>
 
-      <!-- Yellow cubes, stored in the "cubes" collection -->
+      <!-- Stack of cubes, stored in the "cubes" collection -->
       {{#each cubes}}
-        <transform class="yellow-cube" translation="{{x}} {{y}} {{z}}">
+        <transform class="stack-cube" translation="0 {{y}} 0">
           <shape>
             <appearance>
-              <material diffuseColor="1 1 0"></material>
+              <material diffuseColor="{{color}}"></material>
             </appearance>
             <box size="1 1 1"></box>
           </shape>

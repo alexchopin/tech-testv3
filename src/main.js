@@ -1,6 +1,6 @@
 import { Meteor } from 'meteor/meteor';
-import { Mongo } from 'meteor/mongo';
 import { Template } from 'meteor/templating';
+import { Cubes, RED_CUBE, layoutStack, handleCubeClick } from './stack.js';
 
 /*
 Important notes
@@ -15,19 +15,11 @@ Important notes
    During the interview, we will review your implementation and may ask you to extend or modify it.
 */
 
-// Shared between client and server. Each document is a cube: { x, y, z, createdAt }.
-// Stored in MongoDB, so cubes survive page reloads and server restarts.
-export const Cubes = new Mongo.Collection('cubes');
-
-// The red cube is 1x1x1 and centered at the origin, so the cube on top of it
-// is centered one unit higher.
-const ON_TOP_OF_RED_CUBE = { x: 0, y: 1, z: 0 };
-
 if (Meteor.isClient) {
 
   Template.world.helpers({
     cubes() {
-      return Cubes.find({}, { sort: { createdAt: 1 } });
+      return layoutStack(Cubes.find({}, { sort: { createdAt: 1, _id: 1 } }).fetch());
     },
   });
 
@@ -40,13 +32,19 @@ if (Meteor.isClient) {
       }
     },
 
+    // Click on the top of the stack: add a random-colored cube on top.
+    // Click on a lower cube: remove it (the cubes above fall down).
     async 'mouseup #red-cube'() {
       try {
-        // Only one yellow cube on top of the red cube.
-        if (Cubes.findOne(ON_TOP_OF_RED_CUBE)) {
-          return;
-        }
-        await Cubes.insertAsync({ ...ON_TOP_OF_RED_CUBE, createdAt: new Date() });
+        await handleCubeClick(RED_CUBE);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+
+    async 'mouseup .stack-cube'() {
+      try {
+        await handleCubeClick(this._id); // `this` is the cube rendered by {{#each}}
       } catch (e) {
         console.error(e);
       }
