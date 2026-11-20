@@ -22,8 +22,8 @@
         </shape>
       </transform>
 
-      <!-- Cube -->
-      <transform translation="0 0 0">
+      <!-- Red cube (click it to put a yellow cube on top) -->
+      <transform id="red-cube" translation="0 0 0">
         <shape>
           <appearance>
             <material diffuseColor="1 0 0"></material>
@@ -31,6 +31,18 @@
           <box size="1 1 1"></box>
         </shape>
       </transform>
+
+      <!-- Yellow cubes, stored in the "cubes" collection -->
+      {{#each cubes}}
+        <transform class="yellow-cube" translation="{{x}} {{y}} {{z}}">
+          <shape>
+            <appearance>
+              <material diffuseColor="1 1 0"></material>
+            </appearance>
+            <box size="1 1 1"></box>
+          </shape>
+        </transform>
+      {{/each}}
     </scene>
   </x3d>
 </template>
