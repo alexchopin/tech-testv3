@@ -23,12 +23,13 @@ export function layoutStack(cubes) {
 }
 
 // What a click does: 'push' a new cube when the clicked cube is the top of the
-// stack, 'remove' it when it is lower in the stack. The red base cannot be
-// removed, so clicking it while cubes sit on it does nothing ('ignore').
+// stack, 'remove' it when it is lower in the stack. The red base is never
+// removed: clicking it while cubes sit on it clears the stack ('reset'), back
+// to the red cube alone.
 export function clickAction(stack, clickedId) {
   const topId = stack.length ? stack[stack.length - 1]._id : RED_CUBE;
   if (clickedId === topId) return 'push';
-  if (clickedId === RED_CUBE) return 'ignore';
+  if (clickedId === RED_CUBE) return 'reset';
   return 'remove';
 }
 
@@ -57,11 +58,16 @@ export async function getStack() {
 }
 
 export async function handleCubeClick(clickedId, random = Math.random) {
-  const action = clickAction(await getStack(), clickedId);
+  const stack = await getStack();
+  const action = clickAction(stack, clickedId);
   if (action === 'push') {
     await Cubes.insertAsync({ color: randomColor(random), createdAt: new Date() });
   } else if (action === 'remove') {
     await Cubes.removeAsync(clickedId);
+  } else if (action === 'reset') {
+    // Removed one by one: with the insecure package, client code may only
+    // remove documents by _id, not with a selector like {}.
+    await Promise.all(stack.map((cube) => Cubes.removeAsync(cube._id)));
   }
   return action;
 }

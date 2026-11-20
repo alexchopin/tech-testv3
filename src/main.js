@@ -116,6 +116,7 @@ if (Meteor.isClient) {
 
     // Click on the top of the stack: add a random-colored cube on top.
     // Click on a lower cube: remove it (the cubes above fall down).
+    // Click on the red cube under a stack: reset to the red cube alone.
     async 'mouseup #red-cube'() {
       if (lastPointerWasDrag) return;
       try {

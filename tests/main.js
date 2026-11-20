@@ -69,8 +69,8 @@ describe("cube stack", function () {
     it("removes a cube that is not the top", function () {
       assert.strictEqual(stack.clickAction(cubes, "a"), "remove");
     });
-    it("never removes the red base", function () {
-      assert.strictEqual(stack.clickAction(cubes, stack.RED_CUBE), "ignore");
+    it("resets the stack when the red base is clicked under cubes", function () {
+      assert.strictEqual(stack.clickAction(cubes, stack.RED_CUBE), "reset");
     });
   });
 
@@ -90,12 +90,24 @@ describe("cube stack", function () {
         assert.strictEqual(await stack.handleCubeClick(second), "push");
         assert.strictEqual((await ids()).length, 3);
 
-        assert.strictEqual(await stack.handleCubeClick(stack.RED_CUBE), "ignore");
         assert.strictEqual(await stack.handleCubeClick(first), "remove");
 
         const remaining = await stack.getStack();
         assert.deepStrictEqual(remaining.map((c) => c._id).slice(0, 1), [second]);
         assert.deepStrictEqual(stack.layoutStack(remaining).map((c) => c.y), [1, 2]);
+      });
+
+      it("clicking the red cube clears the stack, then a new one can start", async function () {
+        await stack.handleCubeClick(stack.RED_CUBE);
+        const [first] = (await stack.getStack()).map((c) => c._id);
+        await stack.handleCubeClick(first);
+        assert.strictEqual((await stack.getStack()).length, 2);
+
+        assert.strictEqual(await stack.handleCubeClick(stack.RED_CUBE), "reset");
+        assert.strictEqual((await stack.getStack()).length, 0);
+
+        assert.strictEqual(await stack.handleCubeClick(stack.RED_CUBE), "push");
+        assert.strictEqual((await stack.getStack()).length, 1);
       });
     });
   }
