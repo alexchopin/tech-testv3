@@ -36,10 +36,9 @@ describe("cube stack", function () {
 
   describe("layoutStack", function () {
     it("puts the n-th cube at height n, on top of the red cube", function () {
-      const layout = stack.layoutStack([{ _id: "a", color: "#123456" }, { _id: "b" }]);
+      const layout = stack.layoutStack([{ _id: "a", color: "#123456" }, { _id: "b", color: "#abcdef" }]);
       assert.deepStrictEqual(layout.map((c) => c.y), [1, 2]);
-      assert.strictEqual(layout[0].color, "#123456");
-      assert.strictEqual(layout[1].color, "#ffff00"); // old cubes without a color
+      assert.deepStrictEqual(layout.map((c) => c.color), ["#123456", "#abcdef"]);
     });
   });
 

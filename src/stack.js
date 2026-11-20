@@ -9,7 +9,6 @@ export const Cubes = new Mongo.Collection('cubes');
 // The red cube is the base of the stack. It is not stored in the collection.
 export const RED_CUBE = null;
 
-const DEFAULT_COLOR = '#ffff00'; // cubes created before colors existed
 const SORT = { sort: { createdAt: 1, _id: 1 } };
 
 export function randomColor(random = Math.random) {
@@ -20,11 +19,7 @@ export function randomColor(random = Math.random) {
 // Turns the ordered documents into what the scene renders.
 // The red cube is 1x1x1 at the origin, so the n-th cube of the stack is at y = n.
 export function layoutStack(cubes) {
-  return cubes.map((cube, index) => ({
-    ...cube,
-    color: cube.color || DEFAULT_COLOR,
-    y: index + 1,
-  }));
+  return cubes.map((cube, index) => ({ ...cube, y: index + 1 }));
 }
 
 // What a click does: 'push' a new cube when the clicked cube is the top of the
@@ -51,8 +46,14 @@ export function cameraFor(stackSize) {
   return { y, z };
 }
 
+// The stack, bottom to top. Used for rendering and for deciding what a click
+// does, so both always agree on which cube is the top.
+export function stackCursor() {
+  return Cubes.find({}, SORT);
+}
+
 export async function getStack() {
-  return Cubes.find({}, SORT).fetchAsync();
+  return stackCursor().fetchAsync();
 }
 
 export async function handleCubeClick(clickedId, random = Math.random) {

@@ -1,6 +1,6 @@
 import { Meteor } from 'meteor/meteor';
 import { Template } from 'meteor/templating';
-import { Cubes, RED_CUBE, layoutStack, handleCubeClick, cameraFor } from './stack.js';
+import { Cubes, RED_CUBE, stackCursor, layoutStack, handleCubeClick, cameraFor } from './stack.js';
 
 /*
 Important notes
@@ -101,7 +101,7 @@ if (Meteor.isClient) {
 
   Template.world.helpers({
     cubes() {
-      return layoutStack(Cubes.find({}, { sort: { createdAt: 1, _id: 1 } }).fetch());
+      return layoutStack(stackCursor().fetch());
     },
   });
 
