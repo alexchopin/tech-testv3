@@ -30,8 +30,11 @@
 
   <x3d>
     <scene>
-      <!-- Camera: looks at the whole 7x7x7 grid from the front, above the floor -->
-      <viewpoint id="camera" position="0 -16.4 14.5" orientation="1 0 0 0.96"
+      <!-- Cameras: keys 1, 2, 3 switch between them (front, top, side) -->
+      <viewpoint id="view-front" position="0 -16.4 14.5" orientation="1 0 0 0.96"
+                 centerOfRotation="0 0 3" fieldOfView="0.785398"></viewpoint>
+      <viewpoint id="view-top" position="0 0 24" centerOfRotation="0 0 3" fieldOfView="0.785398"></viewpoint>
+      <viewpoint id="view-side" position="16.4 0 14.5" orientation="0.4192 0.4192 0.8053 1.7857"
                  centerOfRotation="0 0 3" fieldOfView="0.785398"></viewpoint>
 
       <!-- Sky, instead of the black beyond the floor when the view is tilted -->
@@ -57,8 +60,20 @@
         </indexedLineSet>
       </shape>
 
+      <!-- Playable floor cells: next to a cube, in my color, on my turn -->
+      {{#each cells}}
+        <transform translation="{{x}} {{y}} -0.48">
+          <shape isPickable="false">
+            <appearance>
+              <material diffuseColor="{{color}}" transparency="0.55"></material>
+            </appearance>
+            <plane size="0.9 0.9"></plane>
+          </shape>
+        </transform>
+      {{/each}}
+
       <!-- Cubes: the red starting cube, then the moves stored in "cubes" -->
-      {{#each state.cubes}}
+      {{#each cubes}}
         <transform class="cube" translation="{{x}} {{y}} {{z}}">
           <shape>
             <appearance>
@@ -68,6 +83,32 @@
           </shape>
         </transform>
       {{/each}}
+
+      <!-- Outline of the last move -->
+      {{#with last}}
+        <transform translation="{{x}} {{y}} {{z}}">
+          <shape isPickable="false">
+            <appearance>
+              <material emissiveColor="1 1 1"></material>
+            </appearance>
+            <indexedLineSet coordIndex="{{outline.coordIndex}}">
+              <coordinate point="{{outline.point}}"></coordinate>
+            </indexedLineSet>
+          </shape>
+        </transform>
+      {{/with}}
+
+      <!-- Preview: where my cube would land, under the mouse -->
+      {{#with preview}}
+        <transform translation="{{x}} {{y}} {{z}}">
+          <shape isPickable="false">
+            <appearance>
+              <material diffuseColor="{{color}}" transparency="0.5"></material>
+            </appearance>
+            <box size="0.98 0.98 0.98"></box>
+          </shape>
+        </transform>
+      {{/with}}
     </scene>
   </x3d>
 </template>
